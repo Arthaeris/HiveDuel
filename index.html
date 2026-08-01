@@ -1,1 +1,214 @@
-.
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Bee Hive Arena</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#6b4a1c" />
+<style>
+  :root{
+    --amber:#ffc61e;
+    --amber-dim:#c99418;
+    --ink:#1d1508;
+    --green:#4ade5c;
+    --blue:#3b9cff;
+    --red:#ff5a4a;
+    --hud: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:#6b4a1c; font-family:var(--hud); color:#fff;
+    touch-action:none; user-select:none; -webkit-user-select:none;
+    overscroll-behavior:none;
+  }
+  canvas{display:block; position:fixed; inset:0; width:100%; height:100%;}
+
+  #ui{position:fixed; inset:0; pointer-events:none; z-index:10;
+      padding:max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+              max(14px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));}
+
+  .label{font-size:clamp(11px,1.7vh,16px); letter-spacing:.16em; text-transform:uppercase;
+         font-weight:700; text-shadow:0 2px 4px rgba(0,0,0,.6);}
+
+  /* ---------- HUD: Stinger ---------- */
+  #hud-ammo{position:absolute; top:2%; left:2.4%;}
+  #ammo-count{font-size:clamp(20px,4.4vh,40px); font-weight:800; line-height:1;
+              text-shadow:0 2px 6px rgba(0,0,0,.7);}
+  #ammo-count b{color:var(--amber); font-weight:800;}
+  #ammo-count span{opacity:.75; font-size:.62em;}
+  #pips{display:flex; gap:.42vh; margin:.9vh 0 .7vh;}
+  .pip{width:clamp(9px,1.9vh,18px); aspect-ratio:1/.92; background:var(--amber);
+       clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%);
+       transition:opacity .12s, transform .12s;}
+  .pip.off{opacity:.22; transform:scale(.86);}
+  #regen{opacity:.9; font-size:clamp(10px,1.5vh,14px);}
+
+  /* ---------- HUD: Timer ---------- */
+  #hud-timer{position:absolute; top:2%; left:50%; transform:translateX(-50%); text-align:center;}
+  #clock{font-size:clamp(22px,4.6vh,42px); font-weight:800; letter-spacing:.04em; line-height:1;
+         text-shadow:0 2px 6px rgba(0,0,0,.7); font-variant-numeric:tabular-nums;}
+  #mode{opacity:.85; margin-top:.5vh;}
+  #clock.urgent{color:var(--red);}
+
+  /* ---------- HUD: Boost ---------- */
+  #hud-boost{position:absolute; top:2%; right:2.4%; text-align:right;}
+  #boost-pct{font-size:clamp(20px,4.4vh,40px); font-weight:800; color:var(--green); line-height:1;
+             text-shadow:0 2px 6px rgba(0,0,0,.7); font-variant-numeric:tabular-nums;}
+  #boost-track{margin-top:1vh; width:clamp(120px,22vw,260px); height:clamp(8px,1.6vh,15px);
+               background:rgba(0,0,0,.42); border:2px solid rgba(255,255,255,.55);}
+  #boost-fill{height:100%; width:100%; background:var(--green); transition:width .08s linear;}
+  .low #boost-pct, .low #boost-fill{color:var(--red); background:var(--red);}
+
+  /* ---------- HUD: Health + Kill Feed ---------- */
+  #hud-hp{position:absolute; left:50%; bottom:4%; transform:translateX(-50%);
+          width:clamp(140px,26vw,300px); height:clamp(7px,1.3vh,12px);
+          background:rgba(0,0,0,.45); border:2px solid rgba(255,255,255,.5);}
+  #hp-fill{height:100%; width:100%; background:var(--amber); transition:width .12s;}
+  #feed{position:absolute; right:2.4%; top:16vh; text-align:right; display:flex;
+        flex-direction:column; gap:.5vh; align-items:flex-end;}
+  .feed-item{font-size:clamp(10px,1.6vh,15px); font-weight:700; letter-spacing:.08em;
+             background:rgba(0,0,0,.42); padding:.4vh .9vh; animation:fade 4s forwards;}
+  @keyframes fade{0%,72%{opacity:1}100%{opacity:0}}
+
+  /* ---------- Joysticks ---------- */
+  .stick{position:absolute; bottom:4%; width:clamp(110px,21vh,190px); aspect-ratio:1;
+         border:3px solid rgba(255,255,255,.42); border-radius:50%;
+         pointer-events:auto; touch-action:none; display:grid; place-items:center;
+         background:rgba(255,255,255,.05);}
+  #stick-left{left:3%;} #stick-right{right:3%;}
+  .knob{width:44%; aspect-ratio:1; border-radius:50%;
+        background:radial-gradient(circle at 35% 30%, #f2f2f2, #9a9a9a);
+        border:2px solid rgba(255,255,255,.7); box-shadow:0 4px 10px rgba(0,0,0,.45);}
+  .arrow{position:absolute; color:rgba(255,255,255,.55); font-size:clamp(12px,2.2vh,20px); line-height:1;}
+  .arrow.u{top:6%} .arrow.d{bottom:6%} .arrow.l{left:6%} .arrow.r{right:6%}
+
+  /* ---------- Action-Buttons ---------- */
+  .btn{position:absolute; width:clamp(62px,12vh,104px); aspect-ratio:1; border-radius:50%;
+       pointer-events:auto; touch-action:none; display:grid; place-items:center;
+       border:4px solid; background:rgba(0,0,0,.32); transition:transform .07s, background .07s;}
+  .btn svg{width:52%; height:52%;}
+  .btn.active{transform:scale(.9);}
+  #btn-shoot{right:calc(3% + clamp(115px,22vh,200px)); bottom:calc(4% + clamp(70px,13vh,120px));
+             border-color:var(--amber);}
+  #btn-shoot.active{background:rgba(255,198,30,.35);}
+  #btn-boost{right:calc(3% + clamp(20px,4vh,42px)); bottom:calc(4% + clamp(120px,22.5vh,205px));
+             border-color:var(--blue); background:rgba(20,50,90,.45);}
+  #btn-boost.active{background:rgba(59,156,255,.4);}
+  #btn-shoot.empty{border-color:#7a6a3a; opacity:.45;}
+
+  /* ---------- Overlays ---------- */
+  .overlay{position:fixed; inset:0; z-index:30; display:grid; place-items:center; text-align:center;
+           background:rgba(20,12,3,.86); padding:6vh 6vw;}
+  .overlay.hidden{display:none;}
+  .overlay h1{font-size:clamp(26px,6.5vh,60px); margin:0 0 1.4vh; letter-spacing:.1em;
+              color:var(--amber); text-transform:uppercase;}
+  .overlay p{margin:.6vh 0; opacity:.88; font-size:clamp(12px,2.1vh,19px); line-height:1.55;}
+  .cta{margin-top:3vh; display:inline-block; pointer-events:auto; cursor:pointer;
+       border:3px solid var(--amber); color:var(--amber); font-weight:800; letter-spacing:.16em;
+       padding:1.6vh 5vw; text-transform:uppercase; font-size:clamp(13px,2.3vh,20px);
+       background:rgba(255,198,30,.1);}
+  #board{margin:2.5vh auto 0; border-collapse:collapse; font-size:clamp(12px,2vh,18px);}
+  #board td,#board th{padding:.7vh 2.2vw; text-align:left; border-bottom:1px solid rgba(255,255,255,.16);}
+  #board .me{color:var(--amber); font-weight:800;}
+
+  #respawn{position:fixed; inset:0; z-index:20; display:grid; place-items:center;
+           background:rgba(120,20,10,.34); pointer-events:none;}
+  #respawn.hidden{display:none;}
+  #respawn div{font-size:clamp(20px,4.4vh,40px); font-weight:800; letter-spacing:.12em;
+               text-shadow:0 3px 8px rgba(0,0,0,.8);}
+  #hurt{position:fixed; inset:0; z-index:15; pointer-events:none; opacity:0;
+        box-shadow:inset 0 0 22vh rgba(255,40,20,.85); transition:opacity .25s;}
+
+  #rotate{position:fixed; inset:0; z-index:40; display:none; place-items:center;
+          background:#241802; text-align:center; padding:8vw;}
+  @media (orientation:portrait){ #rotate{display:grid;} }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <!-- Stinger -->
+  <div id="hud-ammo">
+    <div class="label">Stingers</div>
+    <div id="ammo-count"><b>10</b> <span>/ 10</span></div>
+    <div id="pips"></div>
+    <div id="regen" class="label">Regen: 1 / s</div>
+  </div>
+
+  <!-- Timer -->
+  <div id="hud-timer">
+    <div id="clock">05:00</div>
+    <div id="mode" class="label">Free for all</div>
+  </div>
+
+  <!-- Boost -->
+  <div id="hud-boost">
+    <div class="label">Boost</div>
+    <div id="boost-pct">100%</div>
+    <div id="boost-track"><div id="boost-fill"></div></div>
+  </div>
+
+  <div id="feed"></div>
+  <div id="hud-hp"><div id="hp-fill"></div></div>
+
+  <!-- Sticks -->
+  <div class="stick" id="stick-left">
+    <span class="arrow u">▲</span><span class="arrow d">▼</span>
+    <span class="arrow l">◀</span><span class="arrow r">▶</span>
+    <div class="knob"></div>
+  </div>
+  <div class="stick" id="stick-right">
+    <span class="arrow u">▲</span><span class="arrow d">▼</span>
+    <span class="arrow l">◀</span><span class="arrow r">▶</span>
+    <div class="knob"></div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn" id="btn-shoot" aria-label="Schießen">
+    <svg viewBox="0 0 24 24" fill="#ffc61e">
+      <path d="M13.6 1.6c3.9 2.1 6.3 6 6.6 10.4l.1 2.4-3.6 3.6-2.1-1.2-3 3-1.4-1.4 1.3-2.6-2.3-2.3-2.6 1.3-1.4-1.4 3-3-1.2-2.1L10.6 5l2.4.1c.2-1.2.4-2.3.6-3.5zM15.5 7a1.8 1.8 0 100 3.6 1.8 1.8 0 000-3.6zM5.9 17.2c1-1 2.4-1 3 .1.7 1.1.2 2.6-.8 3.5-.9.8-2.4 1.3-4.2 1.6.3-2 .9-4.2 2-5.2z"/>
+    </svg>
+  </div>
+  <div class="btn" id="btn-boost" aria-label="Boost">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3b9cff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="5,11 12,4 19,11"/><polyline points="5,17 12,10 19,17"/>
+    </svg>
+  </div>
+</div>
+
+<div id="hurt"></div>
+
+<div id="respawn" class="hidden"><div>Respawn <span id="respawn-t">3</span></div></div>
+
+<div class="overlay" id="start">
+  <div>
+    <h1>Bee Hive Arena</h1>
+    <p>Linker Stick fliegt &middot; rechter Stick blickt</p>
+    <p>Gelb schießt Stinger &middot; Blau boostet</p>
+    <p>5 Minuten Free for All gegen 5 Bots</p>
+    <div class="cta" id="start-btn">Antippen zum Starten</div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="end">
+  <div>
+    <h1>Match beendet</h1>
+    <table id="board"></table>
+    <div class="cta" id="again">Nochmal</div>
+  </div>
+</div>
+
+<div id="rotate"><div>
+  <h1 style="color:#ffc61e">Bitte drehen</h1>
+  <p style="opacity:.85">Bee Hive Arena läuft im Querformat.</p>
+</div></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js" } }
+</script>
+<script type="module" src="./game.js"></script>
+</body>
+</html>
