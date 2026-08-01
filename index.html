@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <title>Bee Hive Arena</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#6b4a1c" />
@@ -17,12 +17,13 @@
     --red:#ff5a4a;
     --hud: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none;}
   html,body{
-    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden; position:fixed; inset:0;
     background:#6b4a1c; font-family:var(--hud); color:#fff;
     touch-action:none; user-select:none; -webkit-user-select:none;
     overscroll-behavior:none;
+    -webkit-text-size-adjust:100%; text-size-adjust:100%;
   }
   canvas{display:block; position:fixed; inset:0; width:100%; height:100%;}
 
@@ -110,6 +111,13 @@
        border:3px solid var(--amber); color:var(--amber); font-weight:800; letter-spacing:.16em;
        padding:1.6vh 5vw; text-transform:uppercase; font-size:clamp(13px,2.3vh,20px);
        background:rgba(255,198,30,.1);}
+  .pick{margin-top:2.4vh;}
+  #bot-pick{display:flex; gap:.8vh; justify-content:center; margin-top:1.1vh; flex-wrap:wrap;}
+  .opt{pointer-events:auto; cursor:pointer; font:inherit; font-weight:800;
+       width:clamp(30px,5.4vh,48px); height:clamp(30px,5.4vh,48px);
+       background:transparent; color:rgba(255,255,255,.72);
+       border:2px solid rgba(255,255,255,.3); font-size:clamp(12px,2.1vh,18px);}
+  .opt.on{border-color:var(--amber); color:var(--amber); background:rgba(255,198,30,.16);}
   #board{margin:2.5vh auto 0; border-collapse:collapse; font-size:clamp(12px,2vh,18px);}
   #board td,#board th{padding:.7vh 2.2vw; text-align:left; border-bottom:1px solid rgba(255,255,255,.16);}
   #board .me{color:var(--amber); font-weight:800;}
@@ -188,7 +196,11 @@
     <h1>Bee Hive Arena</h1>
     <p>Linker Stick fliegt &middot; rechter Stick blickt</p>
     <p>Gelb schießt Stinger &middot; Blau boostet</p>
-    <p>5 Minuten Free for All gegen 5 Bots</p>
+    <p>5 Minuten Free for All</p>
+    <div class="pick">
+      <span class="label">Gegner-Bienen</span>
+      <div id="bot-pick"></div>
+    </div>
     <div class="cta" id="start-btn">Antippen zum Starten</div>
   </div>
 </div>
