@@ -44,7 +44,20 @@ export const CFG = {
   // Arena
   arenaR: 120,
   arenaSquash: 0.55,
+  wallInset: 0.78,         // Anteil des Höhlenradius, den man befliegen darf
+  density: {               // wie voll die Arena ist — hier schrauben, nicht im Code
+    tiles: 10,
+    pillars: 7,
+    platforms: 8,
+    rings: 3,
+    lamps: 3,
+    crystals: 8,
+  },
+
+  // Bots
   npcCount: 5,
+  npcMin: 0,
+  npcMax: 9,
 };
 
 export const TEAM_COLORS = [0xffd426, 0x3f7be0, 0xe03f4a, 0x46c46b, 0xb45fe0, 0xe0872f];
@@ -99,6 +112,7 @@ function hexPrism(r, h, color) {
 export function buildArena(scene) {
   const rnd = mulberry32(CFG.seed);
   const R = CFG.arenaR;
+  const D = CFG.density;
   const root = new THREE.Group();
   const colliders = [];
   const spawns = [];
@@ -124,18 +138,34 @@ export function buildArena(scene) {
   const shell = new THREE.Mesh(shellGeo, flatMat(0x8a5c23, { side: THREE.BackSide }));
   shell.position.y = R * 0.34 * CFG.arenaSquash; // Boden auf y = 0
   root.add(shell);
-  const CEIL = shell.position.y + R * 1.05 * CFG.arenaSquash;
+  /* --- Begrenzungs-Ellipsoid ------------------------------------- */
+  const SY = shell.position.y;
+  const RH = R * CFG.wallInset;                        // horizontale Halbachse
+  const RV = R * CFG.arenaSquash * CFG.wallInset;      // vertikale Halbachse
+  const CEIL = SY + RV;
+
+  /** Maximaler Abstand zur Mitte, den ein Objekt auf Höhe y haben darf. */
+  const maxDistAt = (y, margin = 6) => {
+    const t = 1 - ((y - SY) / RV) ** 2;
+    return t <= 0.02 ? 0 : Math.max(0, RH * Math.sqrt(t) - margin);
+  };
+  /** Innenhöhe der Schale über einem Punkt — für Laternenschnüre. */
+  const ceilAt = (d) => {
+    const t = 1 - (d / RH) ** 2;
+    return SY + RV * Math.sqrt(Math.max(0, t));
+  };
 
   /* --- Hex-Boden ------------------------------------------------- */
-  const floor = hexPrism(R * 0.86, 8, 0x9c6a2a);
+  const floor = hexPrism(R * 0.92, 8, 0x9c6a2a);
   floor.position.y = -4;
   root.add(floor);
 
   /* --- Verstreute Bodenplatten für Relief ------------------------ */
-  for (let i = 0; i < 26; i++) {
-    const a = rnd() * Math.PI * 2, d = 12 + rnd() * (R * 0.72);
+  for (let i = 0; i < D.tiles; i++) {
+    const a = rnd() * Math.PI * 2;
     const h = 1.5 + rnd() * 5;
     const r = 7 + rnd() * 9;
+    const d = Math.min(12 + rnd() * (R * 0.72), maxDistAt(h, r + 4));
     const t = hexPrism(r, h, rnd() > 0.5 ? 0xa8742f : 0x926127);
     t.position.set(Math.cos(a) * d, h / 2 - 0.5, Math.sin(a) * d);
     t.rotation.y = rnd() * Math.PI;
@@ -143,12 +173,13 @@ export function buildArena(scene) {
   }
 
   /* --- Pillars ---------------------------------------------------- */
-  const pillarCount = 11;
+  const pillarCount = D.pillars;
   for (let i = 0; i < pillarCount; i++) {
     const a = (i / pillarCount) * Math.PI * 2 + rnd() * 0.5;
-    const d = 34 + rnd() * (R * 0.5);
     const r = 5 + rnd() * 5;
-    const h = 30 + rnd() * (CEIL * 0.7);
+    const h = 30 + rnd() * (CEIL * 0.62);
+    // Säule muss auf ganzer Höhe innerhalb der Schale bleiben
+    const d = Math.min(34 + rnd() * (R * 0.5), maxDistAt(0, r + 4), maxDistAt(h, r + 4));
     const x = Math.cos(a) * d, z = Math.sin(a) * d;
     const m = hexPrism(r, h, 0x7d5220);
     m.position.set(x, h / 2, z);
@@ -158,12 +189,13 @@ export function buildArena(scene) {
   }
 
   /* --- Schwebende Plattformen (mit Stiel) ------------------------- */
-  const platCount = 14;
+  const platCount = D.platforms;
   for (let i = 0; i < platCount; i++) {
     const a = (i / platCount) * Math.PI * 2 + rnd() * 0.7;
-    const d = 20 + rnd() * (R * 0.62);
     const r = 8 + rnd() * 6;
-    const y = 7 + rnd() * (CEIL * 0.6);
+    const y = 7 + rnd() * (CEIL * 0.55);
+    // Plattform + Stiel: enger Wert aus Plattformhöhe und Boden
+    const d = Math.min(20 + rnd() * (R * 0.62), maxDistAt(y, r + 8), maxDistAt(0, r + 4));
     const x = Math.cos(a) * d, z = Math.sin(a) * d;
 
     const top = hexPrism(r, 3.2, 0xb07c33);
@@ -186,25 +218,30 @@ export function buildArena(scene) {
   }
 
   /* --- Hexagonale Tunnel-/Torringe (durchfliegbar) ---------------- */
-  for (let i = 0; i < 6; i++) {
-    const a = rnd() * Math.PI * 2, d = 30 + rnd() * (R * 0.55);
+  for (let i = 0; i < D.rings; i++) {
+    const a = rnd() * Math.PI * 2;
     const r = 10 + rnd() * 7;
+    const y = 12 + rnd() * 34;
+    const d = Math.min(30 + rnd() * (R * 0.5), maxDistAt(y, r + 4));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.9, 3, 6), flatMat(0xf0bb3e));
-    ring.position.set(Math.cos(a) * d, 12 + rnd() * 40, Math.sin(a) * d);
+    ring.position.set(Math.cos(a) * d, y, Math.sin(a) * d);
     ring.lookAt(0, ring.position.y, 0);
     ring.rotateZ(rnd() * 0.6 - 0.3);
     root.add(ring);
   }
 
   /* --- Hängende Laternen ------------------------------------------ */
-  for (let i = 0; i < 4; i++) {
-    const a = rnd() * Math.PI * 2, d = i === 0 ? 0 : 25 + rnd() * (R * 0.45);
-    const x = Math.cos(a) * d, z = Math.sin(a) * d, y = CEIL * (0.55 + rnd() * 0.25);
+  for (let i = 0; i < D.lamps; i++) {
+    const a = rnd() * Math.PI * 2;
+    const y = SY + RV * (0.35 + rnd() * 0.25);
+    const d = i === 0 ? 0 : Math.min(25 + rnd() * (R * 0.42), maxDistAt(y, 8));
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
     const lamp = new THREE.Mesh(new THREE.OctahedronGeometry(3.2, 0), flatMat(0xffd76a, { emissive: 0xffb422 }));
     lamp.position.set(x, y, z);
     root.add(lamp);
-    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, CEIL - y, 4), flatMat(0x5a3d16));
-    cord.position.set(x, (CEIL + y) / 2, z);
+    const top = ceilAt(d);                     // Schnur endet an der echten Decke
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, Math.max(1, top - y), 4), flatMat(0x5a3d16));
+    cord.position.set(x, (top + y) / 2, z);
     root.add(cord);
     const pl = new THREE.PointLight(0xffbe45, 1.35, 130, 2);
     pl.position.set(x, y, z);
@@ -213,11 +250,13 @@ export function buildArena(scene) {
 
   /* --- Kristall-Pickups ------------------------------------------- */
   const crystalColors = [0x46e07a, 0xffe24a, 0x4ac8ff];
-  for (let i = 0; i < 12; i++) {
-    const a = rnd() * Math.PI * 2, d = 15 + rnd() * (R * 0.68);
+  for (let i = 0; i < D.crystals; i++) {
+    const a = rnd() * Math.PI * 2;
+    const y = 5 + rnd() * 40;
+    const d = Math.min(15 + rnd() * (R * 0.6), maxDistAt(y, 8));
     const c = crystalColors[(i % crystalColors.length)];
     const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(1.7, 0), flatMat(c, { emissive: c, emissiveIntensity: 0.55 }));
-    mesh.position.set(Math.cos(a) * d, 4 + rnd() * 45, Math.sin(a) * d);
+    mesh.position.set(Math.cos(a) * d, y, Math.sin(a) * d);
     root.add(mesh);
     pickups.push({ mesh, home: mesh.position.clone(), active: true, cooldown: 0, kind: i % 3 });
   }
@@ -236,16 +275,29 @@ export function buildArena(scene) {
   // Zentrale Freifläche als zusätzliche Spawns
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
-    spawns.push(new THREE.Vector3(Math.cos(a) * 45, 14 + i * 4, Math.sin(a) * 45));
+    const y = 14 + i * 4;
+    const d = Math.min(45, maxDistAt(y, 10));
+    spawns.push(new THREE.Vector3(Math.cos(a) * d, y, Math.sin(a) * d));
   }
 
+  // Die Höhle ist ein gestauchtes Ellipsoid, kein Zylinder. Die Begrenzung
+  // muss dieselbe Form haben, sonst gibt es oben und unten Lücken zum Rausfliegen.
   const world = {
     root, colliders, spawns, pickups,
-    ceiling: CEIL - 4,
+    shellY: shell.position.y,
+    radiusH: R * CFG.wallInset,
+    radiusV: R * CFG.arenaSquash * CFG.wallInset,
+    ceiling: shell.position.y + R * CFG.arenaSquash * CFG.wallInset,
     floorY: 2.2,
-    bounds: R * 0.84,
     randomSpawn: (r = Math.random) => spawns[(r() * spawns.length) | 0].clone(),
   };
+
+  // Sicherheitsnetz: kein Spawn darf in Geometrie oder außerhalb der Schale liegen
+  for (const s of spawns) resolveCollision(s, CFG.beeRadius + 1, world);
+  for (const pk of pickups) {
+    resolveCollision(pk.mesh.position, 2.5, world);
+    pk.home.copy(pk.mesh.position);
+  }
 
   /** Pickups rotieren + Respawn-Timer. */
   world.update = (dt) => {
@@ -289,14 +341,20 @@ export function resolveCollision(pos, radius, world) {
     hit = true;
   }
 
-  // Höhlenwand (zylindrisch angenähert) + Boden + Decke
-  const dh = Math.hypot(pos.x, pos.z);
-  if (dh > world.bounds - radius) {
-    const s = (world.bounds - radius) / dh;
-    pos.x *= s; pos.z *= s; hit = true;
+  // Höhlenschale als Ellipsoid — schließt auch oben/unten dicht ab
+  const a = Math.max(1, world.radiusH - radius);
+  const b = Math.max(1, world.radiusV - radius);
+  const dy = pos.y - world.shellY;
+  const q = (pos.x * pos.x + pos.z * pos.z) / (a * a) + (dy * dy) / (b * b);
+  if (q > 1) {
+    const s = 1 / Math.sqrt(q);
+    pos.x *= s;
+    pos.z *= s;
+    pos.y = world.shellY + dy * s;
+    hit = true;
   }
+
   if (pos.y < world.floorY + radius) { pos.y = world.floorY + radius; hit = true; }
-  if (pos.y > world.ceiling - radius) { pos.y = world.ceiling - radius; hit = true; }
 
   return hit;
 }
@@ -331,6 +389,8 @@ export function lineOfSight(from, to, world) {
 export function makeBee(bodyColor = 0xffd426) {
   const g = new THREE.Group();
   const dark = flatMat(0x231a0d);
+  const geos = [];                       // für sauberes Aufräumen beim Entfernen
+  const track = (geo) => { geos.push(geo); return geo; };
 
   // Hinterleib mit Streifen
   const abdomen = new THREE.Group();
@@ -338,32 +398,32 @@ export function makeBee(bodyColor = 0xffd426) {
   for (let i = 0; i < segs; i++) {
     const r = 1.5 - i * 0.24;
     const seg = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, 1.5 - (i + 1) * 0.24, 0.62, 8),
+      track(new THREE.CylinderGeometry(r, 1.5 - (i + 1) * 0.24, 0.62, 8)),
       i % 2 === 0 ? flatMat(bodyColor) : dark
     );
     seg.rotation.x = Math.PI / 2;
     seg.position.z = -0.6 - i * 0.62;
     abdomen.add(seg);
   }
-  const stinger = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.9, 5), dark);
+  const stinger = new THREE.Mesh(track(new THREE.ConeGeometry(0.22, 0.9, 5)), dark);
   stinger.rotation.x = Math.PI / 2;
   stinger.position.z = -3.35;
   abdomen.add(stinger);
   g.add(abdomen);
 
   // Thorax + Kopf
-  const thorax = new THREE.Mesh(new THREE.SphereGeometry(1.55, 8, 6), flatMat(bodyColor));
+  const thorax = new THREE.Mesh(track(new THREE.SphereGeometry(1.55, 8, 6)), flatMat(bodyColor));
   thorax.scale.set(1, 0.92, 1.05);
   g.add(thorax);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(1.05, 8, 6), dark);
+  const head = new THREE.Mesh(track(new THREE.SphereGeometry(1.05, 8, 6)), dark);
   head.position.z = 1.75;
   g.add(head);
   for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 4), flatMat(0xfff6d8));
+    const eye = new THREE.Mesh(track(new THREE.SphereGeometry(0.3, 6, 4)), flatMat(0xfff6d8));
     eye.position.set(sx * 0.55, 0.25, 2.4);
     g.add(eye);
-    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 4), dark);
+    const ant = new THREE.Mesh(track(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 4)), dark);
     ant.position.set(sx * 0.35, 1.1, 2.3);
     ant.rotation.set(-0.5, 0, sx * 0.4);
     g.add(ant);
@@ -374,7 +434,7 @@ export function makeBee(bodyColor = 0xffd426) {
   wingShape.moveTo(0, 0);
   wingShape.quadraticCurveTo(2.2, 1.0, 4.4, 0.35);
   wingShape.quadraticCurveTo(2.4, -0.5, 0, 0);
-  const wingGeo = new THREE.ShapeGeometry(wingShape);
+  const wingGeo = track(new THREE.ShapeGeometry(wingShape));
   const wingMat = new THREE.MeshLambertMaterial({
     color: 0xffffff, transparent: true, opacity: 0.72, side: THREE.DoubleSide, flatShading: true,
   });
@@ -388,6 +448,9 @@ export function makeBee(bodyColor = 0xffd426) {
     wings.push(w);
   }
 
+  g.userData.geos = geos;
+  g.userData.dispose = () => { for (const geo of geos) geo.dispose(); wingMat.dispose(); };
+
   let phase = Math.random() * 10;
   g.userData.animate = (dt, speed01) => {
     phase += dt * (26 + speed01 * 22);
@@ -398,6 +461,35 @@ export function makeBee(bodyColor = 0xffd426) {
   };
 
   return g;
+}
+
+/* ================================================================== */
+/*  ZOOM-SPERRE                                                        */
+/*  `user-scalable=no` reicht auf iOS seit Version 10 nicht mehr.      */
+/*  Pinch (gesture*) und Doppeltipp müssen aktiv abgefangen werden —   */
+/*  Doppeltipp erwischt man nur über den Abstand zweier touchend.      */
+/* ================================================================== */
+export function lockZoom() {
+  const stop = (e) => e.preventDefault();
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) stop(e); }, { passive: false });
+  for (const t of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(t, stop, { passive: false });
+  }
+  document.addEventListener('dblclick', stop, { passive: false });
+
+  let lastTap = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = performance.now();
+    if (now - lastTap < 400) e.preventDefault();  // Doppeltipp-Zoom
+    lastTap = now;
+  }, { passive: false });
+
+  // Falls doch mal gezoomt wurde (z.B. per Accessibility-Geste): zurücksetzen
+  if (window.visualViewport) {
+    visualViewport.addEventListener('resize', () => {
+      if (visualViewport.scale > 1.01) document.body.style.zoom = '';
+    });
+  }
 }
 
 /* ================================================================== */
@@ -414,9 +506,7 @@ export class TouchInput {
     this._bind('stick-right', this.look);
     this._button('btn-shoot', 'shoot');
     this._button('btn-boost', 'boost');
-    // Verhindert Scrollen/Zoomen während des Spiels
-    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    lockZoom();
   }
 
   _bind(id, out) {
@@ -494,8 +584,10 @@ export class CameraRig {
     this.pitch += look.y * this.sens.pitch * dt;
     this.pitch = THREE.MathUtils.clamp(this.pitch, -1.25, 1.25);
 
+    // Nur x/z spiegeln — y darf NICHT mitgedreht werden, sonst kippt der
+    // rechte Stick vertikal um (Stick hoch => Blick nach unten).
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
-    this.forward.set(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(-1);
+    this.forward.set(-Math.sin(this.yaw) * cp, sp, -Math.cos(this.yaw) * cp);
     this.right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
     // Wunschposition hinter dem Ziel
