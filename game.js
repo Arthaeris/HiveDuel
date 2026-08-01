@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import {
   CFG, TEAM_COLORS, buildArena, TouchInput, CameraRig, ProjectileSystem,
 } from './systems.js';
-import { Actor, spawnNPCs } from './npc.js';
+import { Actor, makeNPC } from './npc.js';
 
 /* ------------------------------------------------------------------ */
 /*  Renderer / Szene                                                   */
@@ -28,8 +28,28 @@ const shots = new ProjectileSystem(scene, world);
 /* ------------------------------------------------------------------ */
 const player = new Actor(scene, { color: TEAM_COLORS[0], name: 'DU', isPlayer: true });
 player.respawn(world);
-const bots = spawnNPCs(scene, world, CFG.npcCount, TEAM_COLORS);
-const actors = [player, ...bots];
+
+// `bots` und `actors` werden nur MUTIERT, nie neu zugewiesen — die Closures
+// unten (onHit, fireFrom) halten die Referenz.
+const bots = [];
+const actors = [player];
+
+/** Bot-Anzahl zur Laufzeit ändern. */
+function setBotCount(n) {
+  n = Math.max(CFG.npcMin, Math.min(CFG.npcMax, n | 0));
+  CFG.npcCount = n;
+  while (bots.length > n) {
+    const b = bots.pop();
+    actors.splice(actors.indexOf(b), 1);
+    b.dispose(scene);
+  }
+  while (bots.length < n) {
+    const b = makeNPC(scene, world, bots.length, TEAM_COLORS);
+    bots.push(b);
+    actors.push(b);
+  }
+  return n;
+}
 
 shots.onHit = (victim, dmg, shooter) => {
   const killed = victim.damage(dmg, shooter);
@@ -227,6 +247,23 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+/* --- Bot-Auswahl -------------------------------------------------- */
+const botPick = $('bot-pick');
+function renderBotPick() {
+  botPick.innerHTML = '';
+  for (let n = CFG.npcMin; n <= CFG.npcMax; n++) {
+    const b = document.createElement('button');
+    b.className = 'opt' + (n === CFG.npcCount ? ' on' : '');
+    b.textContent = n;
+    b.addEventListener('click', () => { setBotCount(n); renderBotPick(); });
+    botPick.appendChild(b);
+  }
+}
+// Vorbelegung per URL: index.html?bots=3
+const urlBots = parseInt(new URLSearchParams(location.search).get('bots'), 10);
+setBotCount(Number.isFinite(urlBots) ? urlBots : CFG.npcCount);
+renderBotPick();
+
 function enterFullscreen() {
   const el = document.documentElement;
   if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
@@ -242,9 +279,9 @@ $('start-btn').addEventListener('click', () => {
 
 $('again').addEventListener('click', () => {
   $('end').classList.add('hidden');
-  last = performance.now();
-  startMatch();
+  $('start').classList.remove('hidden');   // zurück ins Menü, Bots neu wählbar
+  renderBotPick();
 });
 
 // Debug-Hook (praktisch für Tests und später fürs Netzwerk-Layer)
-window.BHA = { scene, world, actors, player, bots, shots, rig, CFG };
+window.BHA = { scene, world, actors, player, bots, shots, rig, CFG, setBotCount };
