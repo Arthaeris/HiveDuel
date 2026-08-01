@@ -122,7 +122,10 @@ export class Actor {
     _a.copy(this.aim);
     if (_a.lengthSq() < 1e-6) _a.set(0, 0, -1);
     _b.copy(this.position).add(_a);
-    _m.lookAt(this.position, _b, UP);
+    // Matrix4.lookAt(eye, target) legt +Z auf (eye - target), also nach HINTEN.
+    // Die Biene ist mit dem Kopf auf +Z gebaut -> Argumente tauschen, sonst
+    // fliegt sie rückwärts.
+    _m.lookAt(_b, this.position, UP);
     _q.setFromRotationMatrix(_m);
 
     // Kurvenlage aus der Seitwärtsbewegung
@@ -156,6 +159,13 @@ export class Actor {
     if (this.respawnTimer > 0) return false;
     this.respawn(world);
     return true;
+  }
+
+  /** Aus der Szene nehmen und Geometrie freigeben (Bot-Anzahl ändern). */
+  dispose(scene) {
+    scene.remove(this.mesh);
+    if (this.mesh.userData.dispose) this.mesh.userData.dispose();
+    this.alive = false;
   }
 
   respawn(world) {
@@ -334,16 +344,13 @@ export class NPCBee extends Actor {
   }
 }
 
-/** Erzeugt das Bot-Feld für ein Match. */
-export function spawnNPCs(scene, world, count, colors) {
-  const skills = ['easy', 'normal', 'normal', 'hard', 'normal', 'easy'];
-  const bots = [];
-  for (let i = 0; i < count; i++) {
-    bots.push(new NPCBee(scene, world, {
-      color: colors[(i + 1) % colors.length],
-      name: `BOT ${i + 1}`,
-      skill: skills[i % skills.length],
-    }));
-  }
-  return bots;
+const BOT_SKILLS = ['easy', 'normal', 'normal', 'hard', 'normal', 'easy', 'hard', 'normal', 'easy'];
+
+/** Einzelnen Bot mit stabiler Identität für Index `i` erzeugen. */
+export function makeNPC(scene, world, i, colors) {
+  return new NPCBee(scene, world, {
+    color: colors[(i + 1) % colors.length],
+    name: `BOT ${i + 1}`,
+    skill: BOT_SKILLS[i % BOT_SKILLS.length],
+  });
 }
